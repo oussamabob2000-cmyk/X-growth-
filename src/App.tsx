@@ -37,6 +37,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [exportMethod, setExportMethod] = useState<'ffmpeg' | 'webcodecs' | 'hybrid'>('webcodecs');
+  const [exportResolution, setExportResolution] = useState<'720p' | '1080p' | '1440p' | '2160p'>('1080p');
   const [codec, setCodec] = useState<'h264' | 'vp9'>('h264');
   const [bitrate, setBitrate] = useState(5);
   const [isExporting, setIsExporting] = useState(false);
@@ -176,12 +177,23 @@ export default function App() {
     try {
       const { width, height } = ASPECT_RATIOS[aspectRatio];
       
+      const RESOLUTION_SCALES = {
+        '720p': 720 / 1080,
+        '1080p': 1,
+        '1440p': 1440 / 1080,
+        '2160p': 2160 / 1080,
+      };
+      
+      const scaleFactor = RESOLUTION_SCALES[exportResolution];
+      const exportWidth = Math.round((width * scaleFactor) / 2) * 2;
+      const exportHeight = Math.round((height * scaleFactor) / 2) * 2;
+      
       const muxer = new Mp4Muxer.Muxer({
         target: new Mp4Muxer.ArrayBufferTarget(),
         video: {
           codec: codec === 'h264' ? 'avc' : 'vp9',
-          width,
-          height
+          width: exportWidth,
+          height: exportHeight
         },
         fastStart: 'in-memory'
       });
@@ -198,15 +210,15 @@ export default function App() {
 
       encoder.configure({
         codec: codecString,
-        width,
-        height,
+        width: exportWidth,
+        height: exportHeight,
         bitrate: bitrate * 1_000_000,
         framerate: fps
       });
 
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = exportWidth;
+      canvas.height = exportHeight;
       const ctx = canvas.getContext('2d')!;
 
       // Preload creator logo if needed
@@ -224,6 +236,9 @@ export default function App() {
       let currentSceneIndex = 0;
 
       for (let f = 0; f < totalFrames; f++) {
+        ctx.save();
+        ctx.scale(scaleFactor, scaleFactor);
+        
         // Draw background
         ctx.fillStyle = '#1a1a1a';
         ctx.fillRect(0, 0, width, height);
@@ -430,6 +445,8 @@ export default function App() {
             
             ctx.shadowColor = 'transparent';
         }
+
+        ctx.restore();
 
         // Encode frame
         const videoFrame = new VideoFrame(canvas, { timestamp: (f * 1e6) / fps });
@@ -643,10 +660,17 @@ export default function App() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-2 uppercase tracking-wider">Format</label>
-                      <div className="py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 font-medium text-center">
-                        MP4 (.mp4)
-                      </div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-2 uppercase tracking-wider">Resolution</label>
+                      <select 
+                        value={exportResolution} 
+                        onChange={(e) => setExportResolution(e.target.value as any)}
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="720p">720p (HD)</option>
+                        <option value="1080p">1080p (FHD)</option>
+                        <option value="1440p">1440p (2K)</option>
+                        <option value="2160p">2160p (4K)</option>
+                      </select>
                     </div>
                   </div>
 
