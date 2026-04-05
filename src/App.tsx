@@ -6,7 +6,19 @@ import { Loader2, Video, Settings, Download, Sparkles, Play, CheckCircle2 } from
 import { cn } from './lib/utils';
 import * as Mp4Muxer from 'mp4-muxer';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiClient: GoogleGenAI | null = null;
+
+const getAI = () => {
+  if (!aiClient) {
+    // Try to get the key from process.env (AI Studio) or import.meta.env (Vercel/Vite standard)
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Gemini API Key is missing. Please set GEMINI_API_KEY or VITE_GEMINI_API_KEY in your environment variables.");
+    }
+    aiClient = new GoogleGenAI({ apiKey });
+  }
+  return aiClient;
+};
 
 const ASPECT_RATIOS = {
   '16:9': { width: 1920, height: 1080 },
@@ -38,6 +50,7 @@ export default function App() {
     setScenes([]);
 
     try {
+      const ai = getAI();
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `I have written the following text:
@@ -75,9 +88,9 @@ export default function App() {
       }
 
       setScenes(generatedScenes);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating script:', error);
-      alert('Failed to generate script. Please try again.');
+      alert(`Failed to generate script: ${error.message || 'Unknown error'}`);
     } finally {
       setIsGenerating(false);
     }
