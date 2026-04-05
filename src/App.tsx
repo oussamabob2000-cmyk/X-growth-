@@ -209,6 +209,17 @@ export default function App() {
       canvas.height = height;
       const ctx = canvas.getContext('2d')!;
 
+      // Preload creator logo if needed
+      let creatorLogoImg: HTMLImageElement | null = null;
+      if (terminalStyle.showCreatorLogo && terminalStyle.creatorLogo) {
+        creatorLogoImg = new Image();
+        creatorLogoImg.src = terminalStyle.creatorLogo;
+        await new Promise((resolve) => {
+          creatorLogoImg!.onload = resolve;
+          creatorLogoImg!.onerror = resolve; // Continue even if it fails
+        });
+      }
+
       let currentFrameCount = 0;
       let currentSceneIndex = 0;
 
@@ -380,10 +391,21 @@ export default function App() {
             const overlayY = height - 40;
             
             if (terminalStyle.showCreatorLogo && terminalStyle.creatorLogo) {
-                // In a real implementation, we'd need to load the image first.
-                // For canvas export, drawing images requires pre-loading.
-                // We'll skip drawing the image in canvas export for simplicity unless preloaded.
-                // Just reserve space.
+                if (creatorLogoImg && creatorLogoImg.complete && creatorLogoImg.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(overlayX + 30, overlayY, 30, 0, Math.PI * 2);
+                    ctx.closePath();
+                    ctx.clip();
+                    ctx.drawImage(creatorLogoImg, overlayX, overlayY - 30, 60, 60);
+                    ctx.restore();
+                    
+                    ctx.beginPath();
+                    ctx.arc(overlayX + 30, overlayY, 30, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
                 overlayX += 76; // 60px image + 16px gap
             }
             
@@ -892,14 +914,39 @@ export default function App() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Creator Logo (URL or Data URI)</label>
-                    <input 
-                      type="text" 
-                      value={terminalStyle.creatorLogo || ''} 
-                      onChange={e => setTerminalStyle(s => ({...s, creatorLogo: e.target.value || null}))}
-                      placeholder="https://example.com/logo.png"
-                      className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
-                    />
+                    <label className="block text-xs font-medium text-neutral-500 mb-1">Creator Logo (Upload Image)</label>
+                    <div className="flex items-center gap-4">
+                      {terminalStyle.creatorLogo && (
+                        <div className="relative w-12 h-12 rounded-full overflow-hidden border border-neutral-700 shrink-0">
+                          <img src={terminalStyle.creatorLogo} alt="Logo preview" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                setTerminalStyle(s => ({...s, creatorLogo: event.target?.result as string}));
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-neutral-800 file:text-neutral-300 hover:file:bg-neutral-700"
+                        />
+                      </div>
+                      {terminalStyle.creatorLogo && (
+                        <button 
+                          onClick={() => setTerminalStyle(s => ({...s, creatorLogo: null}))}
+                          className="text-xs text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap gap-4 pt-2">
