@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Player } from '@remotion/player';
-import { VideoComposition, Scene } from './components/VideoComposition';
+import { VideoComposition, Scene, TerminalStyle } from './components/VideoComposition';
 import { GoogleGenAI, Type } from '@google/genai';
 import { Loader2, Video, Settings, Download, Sparkles, Play, CheckCircle2, X } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -24,6 +24,7 @@ const ASPECT_RATIOS = {
   '16:9': { width: 1920, height: 1080 },
   '9:16': { width: 1080, height: 1920 },
   '1:1': { width: 1080, height: 1080 },
+  '4:5': { width: 1080, height: 1350 },
 };
 
 type AspectRatioKey = keyof typeof ASPECT_RATIOS;
@@ -46,6 +47,22 @@ export default function App() {
   const [aiProvider, setAiProvider] = useState<'gemini' | 'openrouter'>('gemini');
   const [openRouterApiKey, setOpenRouterApiKey] = useState('');
   const [openRouterModel, setOpenRouterModel] = useState('anthropic/claude-3-haiku');
+
+  const [terminalStyle, setTerminalStyle] = useState<TerminalStyle>({
+    title: 'creator — zsh — 80x24',
+    prompt: 'creator@MacBook ~ %',
+    typingSpeed: 2,
+    cursorBlink: true,
+    showTopBar: true,
+    showTrafficLights: true,
+    showLastLogin: true,
+    scale: 0.85,
+    padding: 40,
+    fontSize: 32,
+    lineHeight: 1.5,
+    backgroundColor: '#1e1e1e',
+    textColor: '#f0f0f0',
+  });
 
   const fps = 30;
   const totalFrames = durationSeconds * fps;
@@ -185,74 +202,156 @@ export default function App() {
       let currentSceneIndex = 0;
 
       for (let f = 0; f < totalFrames; f++) {
-        // Find current scene
-        if (f >= currentFrameCount + scenes[currentSceneIndex].durationInFrames) {
-          currentFrameCount += scenes[currentSceneIndex].durationInFrames;
-          currentSceneIndex = Math.min(currentSceneIndex + 1, scenes.length - 1);
-        }
-        const scene = scenes[currentSceneIndex];
-        const frameWithinScene = f - currentFrameCount;
-
         // Draw background
-        ctx.fillStyle = scene.backgroundColor;
+        ctx.fillStyle = '#1a1a1a';
         ctx.fillRect(0, 0, width, height);
 
-        // Opacity
-        let opacity = 1;
-        const fadeFrames = 15;
-        if (frameWithinScene < fadeFrames) {
-          opacity = frameWithinScene / fadeFrames;
-        } else if (frameWithinScene > scene.durationInFrames - fadeFrames) {
-          opacity = (scene.durationInFrames - frameWithinScene) / fadeFrames;
+        const termWidth = width * terminalStyle.scale;
+        ctx.font = `${terminalStyle.fontSize}px monospace`;
+        const lineHeight = terminalStyle.fontSize * terminalStyle.lineHeight;
+        
+        const fullText = scenes.map(s => s.text).join(' ');
+        const charsToShow = Math.floor(f * terminalStyle.typingSpeed);
+        const visibleText = fullText.substring(0, charsToShow);
+        const promptText = terminalStyle.prompt + ' ';
+        
+        const maxWidth = termWidth - (terminalStyle.padding * 2);
+        const lines: string[] = [];
+        
+        if (terminalStyle.showLastLogin) {
+           lines.push(`Last login: ${new Date().toString().split(' ')[0]} ${new Date().toString().split(' ')[1]} ${new Date().getDate()} ${new Date().toLocaleTimeString()} on ttys000`);
+           lines.push('');
         }
-        opacity = Math.max(0, Math.min(1, opacity));
-
-        // Scale
-        const progress = Math.min(1, frameWithinScene / (fps * 0.5));
-        const easeOut = 1 - Math.pow(1 - progress, 3);
-        const scale = 0.9 + (easeOut * 0.1);
-
-        ctx.save();
-        ctx.translate(width / 2, height / 2);
-        ctx.scale(scale, scale);
-        ctx.globalAlpha = opacity;
-
-        ctx.fillStyle = scene.textColor;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const fontSize = Math.floor(width * 0.06);
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.shadowColor = 'rgba(0,0,0,0.3)';
-        ctx.shadowBlur = 10;
-        ctx.shadowOffsetY = 4;
-
-        // Wrap text
-        const words = scene.text.split(' ');
-        let line = '';
-        const lines = [];
-        const maxWidth = width * 0.8;
-
-        for (let n = 0; n < words.length; n++) {
-          const testLine = line + words[n] + ' ';
-          const metrics = ctx.measureText(testLine);
-          if (metrics.width > maxWidth && n > 0) {
-            lines.push(line);
-            line = words[n] + ' ';
-          } else {
-            line = testLine;
-          }
+        
+        const combinedText = promptText + visibleText;
+        const textWords = combinedText.split(' ');
+        let currentLine = '';
+        for (let i = 0; i < textWords.length; i++) {
+           const testLine = currentLine + textWords[i] + ' ';
+           const metrics = ctx.measureText(testLine);
+           if (metrics.width > maxWidth && i > 0) {
+               lines.push(currentLine);
+               currentLine = textWords[i] + ' ';
+           } else {
+               currentLine = testLine;
+           }
         }
-        lines.push(line);
+        lines.push(currentLine);
 
-        const lineHeight = fontSize * 1.2;
-        const totalHeight = lines.length * lineHeight;
-        let startY = -(totalHeight / 2) + (lineHeight / 2);
+        const contentHeight = lines.length * lineHeight;
+        const topBarHeight = terminalStyle.showTopBar ? 40 : 0;
+        const termHeight = Math.max(height * 0.4, contentHeight + (terminalStyle.padding * 2) + topBarHeight);
+        
+        const startX = (width - termWidth) / 2;
+        const startY = (height - termHeight) / 2;
 
-        for (let i = 0; i < lines.length; i++) {
-          ctx.fillText(lines[i].trim(), 0, startY + (i * lineHeight));
+        // Draw Terminal Window
+        ctx.fillStyle = terminalStyle.backgroundColor;
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 50;
+        ctx.shadowOffsetY = 20;
+        
+        ctx.beginPath();
+        if (ctx.roundRect) {
+            ctx.roundRect(startX, startY, termWidth, termHeight, 10);
+        } else {
+            ctx.rect(startX, startY, termWidth, termHeight);
+        }
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Draw Top Bar
+        if (terminalStyle.showTopBar) {
+            ctx.fillStyle = '#2d2d2d';
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(startX, startY, termWidth, topBarHeight, [10, 10, 0, 0]);
+            } else {
+                ctx.rect(startX, startY, termWidth, topBarHeight);
+            }
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(startX, startY + topBarHeight);
+            ctx.lineTo(startX + termWidth, startY + topBarHeight);
+            ctx.strokeStyle = '#111';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            if (terminalStyle.showTrafficLights) {
+                const radius = 6;
+                const spacing = 20;
+                const lightsY = startY + topBarHeight / 2;
+                let lightX = startX + 20;
+                
+                ctx.fillStyle = '#ff5f56';
+                ctx.beginPath(); ctx.arc(lightX, lightsY, radius, 0, Math.PI * 2); ctx.fill();
+                
+                lightX += spacing;
+                ctx.fillStyle = '#ffbd2e';
+                ctx.beginPath(); ctx.arc(lightX, lightsY, radius, 0, Math.PI * 2); ctx.fill();
+                
+                lightX += spacing;
+                ctx.fillStyle = '#27c93f';
+                ctx.beginPath(); ctx.arc(lightX, lightsY, radius, 0, Math.PI * 2); ctx.fill();
+            }
+
+            ctx.fillStyle = '#999';
+            ctx.font = '500 16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(terminalStyle.title, startX + termWidth / 2, startY + topBarHeight / 2);
         }
 
-        ctx.restore();
+        // Draw Content
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.font = `${terminalStyle.fontSize}px monospace`;
+        
+        let textY = startY + topBarHeight + terminalStyle.padding;
+        const textX = startX + terminalStyle.padding;
+
+        if (terminalStyle.showLastLogin) {
+            ctx.fillStyle = '#888';
+            ctx.fillText(lines[0], textX, textY);
+            textY += lineHeight * 2;
+        }
+
+        let charsDrawn = 0;
+        const promptLen = promptText.length;
+        const startLineIndex = terminalStyle.showLastLogin ? 2 : 0;
+        
+        for (let i = startLineIndex; i < lines.length; i++) {
+            const lineStr = lines[i];
+            let currentX = textX;
+            
+            for (let j = 0; j < lineStr.length; j++) {
+                const char = lineStr[j];
+                if (charsDrawn < promptLen) {
+                    ctx.fillStyle = '#4af626';
+                } else {
+                    ctx.fillStyle = terminalStyle.textColor;
+                }
+                ctx.fillText(char, currentX, textY);
+                currentX += ctx.measureText(char).width;
+                charsDrawn++;
+            }
+            
+            if (i === lines.length - 1) {
+                const isTypingComplete = charsToShow >= fullText.length;
+                const showCursor = terminalStyle.cursorBlink ? (Math.floor(f / 15) % 2 === 0) : true;
+                if (!isTypingComplete || showCursor) {
+                    ctx.fillStyle = terminalStyle.textColor;
+                    ctx.fillRect(currentX + 2, textY, terminalStyle.fontSize * 0.6, terminalStyle.fontSize);
+                }
+            }
+            
+            textY += lineHeight;
+        }
 
         // Encode frame
         const videoFrame = new VideoFrame(canvas, { timestamp: (f * 1e6) / fps });
@@ -321,13 +420,13 @@ export default function App() {
           <div className="space-y-6 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
             <div className="flex items-center gap-2 text-lg font-medium border-b border-neutral-800 pb-4">
               <Settings className="w-5 h-5 text-neutral-400" />
-              Video Settings
+              Video Format & Settings
             </div>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-neutral-400 mb-2">Aspect Ratio</label>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="block text-sm font-medium text-neutral-400 mb-2">Video Format (Canvas Setup)</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {(Object.keys(ASPECT_RATIOS) as AspectRatioKey[]).map((ratio) => (
                     <button
                       key={ratio}
@@ -339,10 +438,15 @@ export default function App() {
                           : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
                       )}
                     >
-                      {ratio}
+                      {ratio === '9:16' ? 'Vertical Shorts' : ratio === '1:1' ? 'Square' : ratio === '16:9' ? 'Landscape' : 'Portrait'} ({ratio})
                     </button>
                   ))}
                 </div>
+                {scenes.length > 0 && (
+                  <p className="text-xs text-amber-500 mt-2">
+                    Warning: Changing format after generation may require adjusting terminal scale or text size.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -352,7 +456,7 @@ export default function App() {
                 <input
                   type="range"
                   min="5"
-                  max="30"
+                  max="60"
                   step="1"
                   value={durationSeconds}
                   onChange={(e) => setDurationSeconds(parseInt(e.target.value))}
@@ -411,7 +515,7 @@ export default function App() {
                   <Player
                     ref={playerRef}
                     component={VideoComposition}
-                    inputProps={{ scenes }}
+                    inputProps={{ scenes, terminalStyle }}
                     durationInFrames={totalFrames}
                     compositionWidth={ASPECT_RATIOS[aspectRatio].width}
                     compositionHeight={ASPECT_RATIOS[aspectRatio].height}
@@ -436,7 +540,95 @@ export default function App() {
             </div>
 
             {scenes.length > 0 && (
-              <div className="p-6 border-t border-neutral-800 bg-neutral-900">
+              <div className="p-6 border-t border-neutral-800 bg-neutral-900 space-y-6">
+                
+                {/* Terminal Style Controls */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-neutral-300 uppercase tracking-wider mb-4">Terminal Style Controls</h3>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Terminal Title</label>
+                      <input 
+                        type="text" 
+                        value={terminalStyle.title} 
+                        onChange={e => setTerminalStyle(s => ({...s, title: e.target.value}))}
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Prompt Style</label>
+                      <input 
+                        type="text" 
+                        value={terminalStyle.prompt} 
+                        onChange={e => setTerminalStyle(s => ({...s, prompt: e.target.value}))}
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Typing Speed ({terminalStyle.typingSpeed})</label>
+                      <input type="range" min="0.1" max="5" step="0.1" value={terminalStyle.typingSpeed} onChange={e => setTerminalStyle(s => ({...s, typingSpeed: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Window Scale ({terminalStyle.scale})</label>
+                      <input type="range" min="0.5" max="1" step="0.05" value={terminalStyle.scale} onChange={e => setTerminalStyle(s => ({...s, scale: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Text Size ({terminalStyle.fontSize}px)</label>
+                      <input type="range" min="12" max="72" step="1" value={terminalStyle.fontSize} onChange={e => setTerminalStyle(s => ({...s, fontSize: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Padding ({terminalStyle.padding}px)</label>
+                      <input type="range" min="10" max="100" step="5" value={terminalStyle.padding} onChange={e => setTerminalStyle(s => ({...s, padding: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Background Color</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={terminalStyle.backgroundColor} onChange={e => setTerminalStyle(s => ({...s, backgroundColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
+                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.backgroundColor}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Text Color</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={terminalStyle.textColor} onChange={e => setTerminalStyle(s => ({...s, textColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
+                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.textColor}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4 pt-2">
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.cursorBlink} onChange={e => setTerminalStyle(s => ({...s, cursorBlink: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Cursor Blink
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showTopBar} onChange={e => setTerminalStyle(s => ({...s, showTopBar: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Top Bar
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showTrafficLights} onChange={e => setTerminalStyle(s => ({...s, showTrafficLights: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Traffic Lights
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showLastLogin} onChange={e => setTerminalStyle(s => ({...s, showLastLogin: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Last Login Text
+                    </label>
+                  </div>
+                </div>
+
+                <hr className="border-neutral-800" />
+
+                {/* Export Controls */}
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
