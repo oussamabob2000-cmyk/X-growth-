@@ -1,0 +1,5 @@
+{
+  "name": "Text to Video AI",
+  "description": "Generate videos from text using Gemini 3 Flash and Remotion",
+  "requestFramePermissions": []
+}
