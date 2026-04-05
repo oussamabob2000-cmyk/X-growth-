@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Player } from '@remotion/player';
-import { VideoComposition, Scene, TerminalStyle } from './components/VideoComposition';
+import { VideoComposition, Scene, TerminalStyle, SceneSettings, TerminalAppearance } from './components/VideoComposition';
 import { GoogleGenAI, Type } from '@google/genai';
 import { Loader2, Video, Settings, Download, Sparkles, Play, CheckCircle2, X } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -74,7 +74,24 @@ export default function App() {
     platformName: 'YouTube',
   });
 
-  const [settingsTab, setSettingsTab] = useState<'ai' | 'terminal' | 'identity'>('ai');
+  const [settingsTab, setSettingsTab] = useState<'ai' | 'terminal' | 'identity' | 'background'>('ai');
+
+  const [sceneSettings, setSceneSettings] = useState<SceneSettings>({
+    backgroundType: 'custom_image',
+    backgroundImageUrl: '',
+    backgroundBrightness: 0.6,
+    backgroundBlur: 2,
+    savedBackgrounds: [],
+    fitMode: 'cover',
+    gradientPreset: 'night_sky',
+  });
+
+  const [terminalAppearance, setTerminalAppearance] = useState<TerminalAppearance>({
+    opacity: 0.70,
+    blurIntensity: 20,
+    titleBarOpacity: 0.85,
+    contentAreaOpacity: 0.65,
+  });
 
   const fps = 30;
   const totalFrames = durationSeconds * fps;
@@ -232,6 +249,17 @@ export default function App() {
         });
       }
 
+      // Preload background image if needed
+      let bgImg: HTMLImageElement | null = null;
+      if (sceneSettings.backgroundType === 'custom_image' && sceneSettings.backgroundImageUrl) {
+        bgImg = new Image();
+        bgImg.src = sceneSettings.backgroundImageUrl;
+        await new Promise((resolve) => {
+          bgImg!.onload = resolve;
+          bgImg!.onerror = resolve;
+        });
+      }
+
       let currentFrameCount = 0;
       let currentSceneIndex = 0;
 
@@ -240,8 +268,70 @@ export default function App() {
         ctx.scale(scaleFactor, scaleFactor);
         
         // Draw background
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(0, 0, width, height);
+        ctx.save();
+        if (sceneSettings.backgroundType === 'custom_image' && bgImg && bgImg.complete) {
+            ctx.filter = `brightness(${sceneSettings.backgroundBrightness * 100}%) blur(${sceneSettings.backgroundBlur}px)`;
+            const imgRatio = bgImg.width / bgImg.height;
+            const canvasRatio = width / height;
+            let drawWidth = width;
+            let drawHeight = height;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            if (sceneSettings.fitMode === 'cover') {
+                if (canvasRatio > imgRatio) {
+                    drawWidth = width;
+                    drawHeight = width / imgRatio;
+                    offsetY = (height - drawHeight) / 2;
+                } else {
+                    drawHeight = height;
+                    drawWidth = height * imgRatio;
+                    offsetX = (width - drawWidth) / 2;
+                }
+            } else if (sceneSettings.fitMode === 'contain') {
+                if (canvasRatio > imgRatio) {
+                    drawHeight = height;
+                    drawWidth = height * imgRatio;
+                    offsetX = (width - drawWidth) / 2;
+                } else {
+                    drawWidth = width;
+                    drawHeight = width / imgRatio;
+                    offsetY = (height - drawHeight) / 2;
+                }
+            }
+            
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.translate(width/2, height/2);
+            ctx.scale(1.05, 1.05);
+            ctx.translate(-width/2, -height/2);
+            
+            ctx.drawImage(bgImg, offsetX, offsetY, drawWidth, drawHeight);
+        } else if (sceneSettings.backgroundType === 'gradient') {
+            let grd;
+            if (sceneSettings.gradientPreset === 'night_sky') {
+                grd = ctx.createLinearGradient(0, 0, width, height);
+                grd.addColorStop(0, '#0f172a');
+                grd.addColorStop(1, '#020617');
+            } else if (sceneSettings.gradientPreset === 'forest_dark') {
+                grd = ctx.createLinearGradient(0, 0, width, height);
+                grd.addColorStop(0, '#064e3b');
+                grd.addColorStop(1, '#022c22');
+            } else if (sceneSettings.gradientPreset === 'sunset') {
+                grd = ctx.createLinearGradient(0, 0, width, height);
+                grd.addColorStop(0, '#7c2d12');
+                grd.addColorStop(1, '#4c1d95');
+            } else {
+                grd = '#000000';
+            }
+            ctx.fillStyle = grd;
+            ctx.fillRect(0, 0, width, height);
+        } else {
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, width, height);
+        }
+        ctx.restore();
 
         const termWidth = width * terminalStyle.scale;
         ctx.font = `${terminalStyle.fontSize}px monospace`;
@@ -288,12 +378,12 @@ export default function App() {
         const startX = (width - termWidth) / 2;
         const startY = (height - termHeight) / 2;
 
-        // Draw Terminal Window
-        ctx.fillStyle = terminalStyle.backgroundColor;
+        // Draw Terminal Window Shadow
+        ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = 50;
+        ctx.shadowBlur = 60;
         ctx.shadowOffsetY = 20;
-        
+        ctx.fillStyle = 'rgba(0,0,0,1)';
         ctx.beginPath();
         if (ctx.roundRect) {
             ctx.roundRect(startX, startY, termWidth, termHeight, 10);
@@ -301,15 +391,107 @@ export default function App() {
             ctx.rect(startX, startY, termWidth, termHeight);
         }
         ctx.fill();
-        ctx.shadowColor = 'transparent';
+        ctx.restore();
+
+        // Simulate backdrop-filter: blur
+        if (terminalAppearance.blurIntensity > 0) {
+            ctx.save();
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(startX, startY, termWidth, termHeight, 10);
+            } else {
+                ctx.rect(startX, startY, termWidth, termHeight);
+            }
+            ctx.clip();
+            
+            if (sceneSettings.backgroundType === 'custom_image' && bgImg && bgImg.complete) {
+                ctx.filter = `brightness(${sceneSettings.backgroundBrightness * 100}%) blur(${sceneSettings.backgroundBlur + terminalAppearance.blurIntensity}px) saturate(180%)`;
+                
+                const imgRatio = bgImg.width / bgImg.height;
+                const canvasRatio = width / height;
+                let drawWidth = width;
+                let drawHeight = height;
+                let offsetX = 0;
+                let offsetY = 0;
+
+                if (sceneSettings.fitMode === 'cover') {
+                    if (canvasRatio > imgRatio) {
+                        drawWidth = width;
+                        drawHeight = width / imgRatio;
+                        offsetY = (height - drawHeight) / 2;
+                    } else {
+                        drawHeight = height;
+                        drawWidth = height * imgRatio;
+                        offsetX = (width - drawWidth) / 2;
+                    }
+                } else if (sceneSettings.fitMode === 'contain') {
+                    if (canvasRatio > imgRatio) {
+                        drawHeight = height;
+                        drawWidth = height * imgRatio;
+                        offsetX = (width - drawWidth) / 2;
+                    } else {
+                        drawWidth = width;
+                        drawHeight = width / imgRatio;
+                        offsetY = (height - drawHeight) / 2;
+                    }
+                }
+                
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, width, height);
+                
+                ctx.translate(width/2, height/2);
+                ctx.scale(1.05, 1.05);
+                ctx.translate(-width/2, -height/2);
+                
+                ctx.drawImage(bgImg, offsetX, offsetY, drawWidth, drawHeight);
+            } else if (sceneSettings.backgroundType === 'gradient') {
+                ctx.filter = `blur(${terminalAppearance.blurIntensity}px) saturate(180%)`;
+                let grd;
+                if (sceneSettings.gradientPreset === 'night_sky') {
+                    grd = ctx.createLinearGradient(0, 0, width, height);
+                    grd.addColorStop(0, '#0f172a');
+                    grd.addColorStop(1, '#020617');
+                } else if (sceneSettings.gradientPreset === 'forest_dark') {
+                    grd = ctx.createLinearGradient(0, 0, width, height);
+                    grd.addColorStop(0, '#064e3b');
+                    grd.addColorStop(1, '#022c22');
+                } else if (sceneSettings.gradientPreset === 'sunset') {
+                    grd = ctx.createLinearGradient(0, 0, width, height);
+                    grd.addColorStop(0, '#7c2d12');
+                    grd.addColorStop(1, '#4c1d95');
+                } else {
+                    grd = '#000000';
+                }
+                ctx.fillStyle = grd;
+                ctx.fillRect(0, 0, width, height);
+            } else {
+                ctx.filter = `blur(${terminalAppearance.blurIntensity}px) saturate(180%)`;
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(0, 0, width, height);
+            }
+            ctx.restore();
+        }
+
+        // Draw Terminal Window Base
+        ctx.save();
+        ctx.fillStyle = `rgba(15, 15, 20, ${terminalAppearance.opacity})`;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+            ctx.roundRect(startX, startY, termWidth, termHeight, 10);
+        } else {
+            ctx.rect(startX, startY, termWidth, termHeight);
+        }
+        ctx.fill();
         
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.restore();
 
         // Draw Top Bar
         if (terminalStyle.showTopBar) {
-            ctx.fillStyle = '#2d2d2d';
+            ctx.save();
+            ctx.fillStyle = `rgba(30, 30, 35, ${terminalAppearance.titleBarOpacity})`;
             ctx.beginPath();
             if (ctx.roundRect) {
                 ctx.roundRect(startX, startY, termWidth, topBarHeight, [10, 10, 0, 0]);
@@ -321,9 +503,10 @@ export default function App() {
             ctx.beginPath();
             ctx.moveTo(startX, startY + topBarHeight);
             ctx.lineTo(startX + termWidth, startY + topBarHeight);
-            ctx.strokeStyle = '#111';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
             ctx.lineWidth = 1;
             ctx.stroke();
+            ctx.restore();
 
             if (terminalStyle.showTrafficLights) {
                 const radius = 6;
@@ -351,6 +534,18 @@ export default function App() {
             ctx.fillText(displayTitle, startX + termWidth / 2, startY + topBarHeight / 2);
         }
 
+        // Draw Content Area Background
+        ctx.save();
+        ctx.fillStyle = `rgba(10, 12, 16, ${terminalAppearance.contentAreaOpacity})`;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+            ctx.roundRect(startX, startY + topBarHeight, termWidth, termHeight - topBarHeight, [0, 0, 10, 10]);
+        } else {
+            ctx.rect(startX, startY + topBarHeight, termWidth, termHeight - topBarHeight);
+        }
+        ctx.fill();
+        ctx.restore();
+
         // Draw Content
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
@@ -376,9 +571,9 @@ export default function App() {
             for (let j = 0; j < lineStr.length; j++) {
                 const char = lineStr[j];
                 if (charsDrawn < promptLen) {
-                    ctx.fillStyle = '#4af626';
+                    ctx.fillStyle = '#4ade80';
                 } else {
-                    ctx.fillStyle = terminalStyle.textColor;
+                    ctx.fillStyle = '#d1fae5';
                 }
                 ctx.fillText(char, currentX, textY);
                 currentX += ctx.measureText(char).width;
@@ -389,8 +584,8 @@ export default function App() {
                 const isTypingComplete = charsToShow >= fullText.length;
                 const showCursor = terminalStyle.cursorBlink ? (Math.floor(f / 15) % 2 === 0) : true;
                 if (!isTypingComplete || showCursor) {
-                    ctx.fillStyle = terminalStyle.textColor;
-                    ctx.fillRect(currentX + 2, textY, terminalStyle.fontSize * 0.6, terminalStyle.fontSize);
+                    ctx.fillStyle = '#60a5fa';
+                    ctx.fillRect(currentX + 2, textY - terminalStyle.fontSize * 0.8, terminalStyle.fontSize * 0.6, terminalStyle.fontSize);
                 }
             }
             
@@ -610,7 +805,7 @@ export default function App() {
                   <Player
                     ref={playerRef}
                     component={VideoComposition}
-                    inputProps={{ scenes, terminalStyle }}
+                    inputProps={{ scenes, terminalStyle, sceneSettings, terminalAppearance }}
                     durationInFrames={totalFrames}
                     compositionWidth={ASPECT_RATIOS[aspectRatio].width}
                     compositionHeight={ASPECT_RATIOS[aspectRatio].height}
@@ -750,8 +945,9 @@ export default function App() {
             
             <div className="flex border-b border-neutral-800 shrink-0">
               <button onClick={() => setSettingsTab('ai')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'ai' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>AI Provider</button>
-              <button onClick={() => setSettingsTab('terminal')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'terminal' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>Terminal Style</button>
-              <button onClick={() => setSettingsTab('identity')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'identity' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>Creator Identity</button>
+              <button onClick={() => setSettingsTab('terminal')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'terminal' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>Terminal</button>
+              <button onClick={() => setSettingsTab('background')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'background' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>Background</button>
+              <button onClick={() => setSettingsTab('identity')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'identity' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>Identity</button>
             </div>
 
             <div className="p-6 overflow-y-auto">
@@ -851,19 +1047,16 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Background Color</label>
-                      <div className="flex items-center gap-2">
-                        <input type="color" value={terminalStyle.backgroundColor} onChange={e => setTerminalStyle(s => ({...s, backgroundColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
-                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.backgroundColor}</span>
+                  <div className="pt-4 border-t border-neutral-800">
+                    <h3 className="text-sm font-medium text-neutral-300 mb-4">Transparency</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-neutral-500 mb-1">Terminal Opacity ({Math.round(terminalAppearance.opacity * 100)}%)</label>
+                        <input type="range" min="0.2" max="0.95" step="0.05" value={terminalAppearance.opacity} onChange={e => setTerminalAppearance(s => ({...s, opacity: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Text Color</label>
-                      <div className="flex items-center gap-2">
-                        <input type="color" value={terminalStyle.textColor} onChange={e => setTerminalStyle(s => ({...s, textColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
-                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.textColor}</span>
+                      <div>
+                        <label className="block text-xs font-medium text-neutral-500 mb-1">Blur Intensity ({terminalAppearance.blurIntensity}px)</label>
+                        <input type="range" min="0" max="40" step="1" value={terminalAppearance.blurIntensity} onChange={e => setTerminalAppearance(s => ({...s, blurIntensity: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
                       </div>
                     </div>
                   </div>
@@ -886,6 +1079,128 @@ export default function App() {
                       Last Login Text
                     </label>
                   </div>
+                </div>
+              )}
+
+              {settingsTab === 'background' && (
+                <div className="space-y-6 animate-in fade-in">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-400 mb-2">Background Type</label>
+                    <div className="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
+                      {(['custom_image', 'solid_color', 'gradient', 'none'] as const).map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => setSceneSettings(s => ({...s, backgroundType: type}))}
+                          className={cn("flex-1 py-2 text-xs font-medium rounded-md transition-all capitalize", sceneSettings.backgroundType === type ? "bg-neutral-800 text-white" : "text-neutral-400")}
+                        >
+                          {type.replace('_', ' ')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {sceneSettings.backgroundType === 'custom_image' && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-400 mb-2">Custom Image Upload</label>
+                        <input
+                          type="file"
+                          accept="image/png, image/jpeg, image/webp"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 20 * 1024 * 1024) {
+                                alert('File size must be less than 20MB');
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (e) => {
+                                const url = e.target?.result as string;
+                                setSceneSettings(s => ({
+                                  ...s,
+                                  backgroundImageUrl: url,
+                                  savedBackgrounds: [url, ...s.savedBackgrounds.filter(bg => bg !== url)].slice(0, 5)
+                                }));
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="w-full text-sm text-neutral-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                        />
+                      </div>
+                      
+                      {sceneSettings.backgroundImageUrl && (
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-500 mb-2">Current Image</label>
+                          <img src={sceneSettings.backgroundImageUrl} alt="Background Preview" className="w-full h-32 object-cover rounded-lg border border-neutral-800" />
+                        </div>
+                      )}
+
+                      {sceneSettings.savedBackgrounds.length > 0 && (
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-500 mb-2">Saved Backgrounds</label>
+                          <div className="flex gap-2 overflow-x-auto pb-2">
+                            {sceneSettings.savedBackgrounds.map((bg, i) => (
+                              <div key={i} className="relative group shrink-0">
+                                <img 
+                                  src={bg} 
+                                  alt={`Saved ${i}`} 
+                                  className="w-16 h-16 object-cover rounded-md cursor-pointer border-2 border-transparent hover:border-indigo-500 transition-all"
+                                  onClick={() => setSceneSettings(s => ({...s, backgroundImageUrl: bg}))}
+                                />
+                                <button 
+                                  onClick={() => setSceneSettings(s => ({...s, savedBackgrounds: s.savedBackgrounds.filter(saved => saved !== bg)}))}
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-500 mb-1">Fit Mode</label>
+                          <select 
+                            value={sceneSettings.fitMode} 
+                            onChange={(e) => setSceneSettings(s => ({...s, fitMode: e.target.value as any}))}
+                            className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                          >
+                            <option value="cover">Cover</option>
+                            <option value="contain">Contain</option>
+                            <option value="fill">Fill</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-500 mb-1">Brightness ({Math.round(sceneSettings.backgroundBrightness * 100)}%)</label>
+                          <input type="range" min="0.2" max="1" step="0.05" value={sceneSettings.backgroundBrightness} onChange={e => setSceneSettings(s => ({...s, backgroundBrightness: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-500 mb-1">Blur ({sceneSettings.backgroundBlur}px)</label>
+                          <input type="range" min="0" max="20" step="1" value={sceneSettings.backgroundBlur} onChange={e => setSceneSettings(s => ({...s, backgroundBlur: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {sceneSettings.backgroundType === 'gradient' && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                      <label className="block text-sm font-medium text-neutral-400 mb-2">Gradient Preset</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['night_sky', 'forest_dark', 'terminal_classic', 'sunset'] as const).map((preset) => (
+                          <button
+                            key={preset}
+                            onClick={() => setSceneSettings(s => ({...s, gradientPreset: preset}))}
+                            className={cn("py-3 px-4 text-sm font-medium rounded-lg transition-all capitalize text-left", sceneSettings.gradientPreset === preset ? "bg-indigo-600 text-white" : "bg-neutral-950 text-neutral-400 hover:bg-neutral-800")}
+                          >
+                            {preset.replace('_', ' ')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

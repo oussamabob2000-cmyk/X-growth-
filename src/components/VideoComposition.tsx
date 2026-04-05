@@ -32,12 +32,37 @@ export type Scene = {
   textColor: string;
 };
 
+export type SceneSettings = {
+  backgroundType: 'custom_image' | 'solid_color' | 'gradient' | 'none';
+  backgroundImageUrl: string;
+  backgroundBrightness: number;
+  backgroundBlur: number;
+  fitMode: 'cover' | 'contain' | 'fill';
+  gradientPreset: 'night_sky' | 'forest_dark' | 'terminal_classic' | 'sunset';
+};
+
+export type TerminalAppearance = {
+  opacity: number;
+  blurIntensity: number;
+  titleBarOpacity: number;
+  contentAreaOpacity: number;
+};
+
 export type VideoCompositionProps = {
   scenes: Scene[];
   terminalStyle: TerminalStyle;
+  sceneSettings: SceneSettings;
+  terminalAppearance: TerminalAppearance;
 };
 
-export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, terminalStyle }) => {
+const GRADIENTS = {
+  night_sky: 'linear-gradient(to bottom right, #0f172a, #020617)',
+  forest_dark: 'linear-gradient(to bottom right, #064e3b, #022c22)',
+  terminal_classic: '#000000',
+  sunset: 'linear-gradient(to bottom right, #7c2d12, #4c1d95)',
+};
+
+export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, terminalStyle, sceneSettings, terminalAppearance }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -55,30 +80,71 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, term
   // Auto-generate title if shellName is provided and title is default-like
   const displayTitle = terminalStyle.title || `${terminalStyle.creatorName.toLowerCase()} — ${terminalStyle.shellName} — 80x24`;
 
+  let backgroundStyle: React.CSSProperties = {
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  };
+
+  if (sceneSettings.backgroundType === 'gradient') {
+    backgroundStyle.background = GRADIENTS[sceneSettings.gradientPreset];
+  } else if (sceneSettings.backgroundType === 'solid_color') {
+    backgroundStyle.backgroundColor = '#1a1a1a'; // Default solid color
+  }
+
+  const getFitMode = () => {
+    switch (sceneSettings.fitMode) {
+      case 'contain': return 'contain';
+      case 'fill': return 'fill';
+      case 'cover':
+      default: return 'cover';
+    }
+  };
+
   return (
-    <AbsoluteFill style={{ backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }}>
+    <AbsoluteFill style={backgroundStyle}>
+      {sceneSettings.backgroundType === 'custom_image' && sceneSettings.backgroundImageUrl && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundImage: `url(${sceneSettings.backgroundImageUrl})`,
+          backgroundSize: getFitMode(),
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          filter: `brightness(${sceneSettings.backgroundBrightness * 100}%) blur(${sceneSettings.backgroundBlur}px)`,
+          transform: 'scale(1.05)', // Prevent blur edges from showing
+        }} />
+      )}
+      
       <div
         style={{
           width: `${terminalStyle.scale * 100}%`,
           maxWidth: '95%',
-          backgroundColor: terminalStyle.backgroundColor,
+          backgroundColor: `rgba(15, 15, 20, ${terminalAppearance.opacity})`,
+          backdropFilter: `blur(${terminalAppearance.blurIntensity}px) saturate(180%)`,
+          WebkitBackdropFilter: `blur(${terminalAppearance.blurIntensity}px) saturate(180%)`,
           borderRadius: '10px',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          border: '1px solid #333',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          position: 'relative',
+          zIndex: 10,
         }}
       >
         {terminalStyle.showTopBar && (
           <div style={{
-            backgroundColor: '#2d2d2d',
+            backgroundColor: `rgba(30, 30, 35, ${terminalAppearance.titleBarOpacity})`,
             height: '36px',
             display: 'flex',
             alignItems: 'center',
             padding: '0 16px',
             position: 'relative',
-            borderBottom: '1px solid #111'
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
           }}>
             {terminalStyle.showTrafficLights && (
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -105,7 +171,8 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, term
         
         <div style={{
           padding: `${terminalStyle.padding}px`,
-          color: terminalStyle.textColor,
+          backgroundColor: `rgba(10, 12, 16, ${terminalAppearance.contentAreaOpacity})`,
+          color: terminalAppearance.opacity < 0.4 ? '#ffffff' : '#e8e8e8',
           fontFamily: '"JetBrains Mono", "Fira Code", monospace',
           fontSize: `${terminalStyle.fontSize}px`,
           lineHeight: terminalStyle.lineHeight,
@@ -120,14 +187,14 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, term
             </div>
           )}
           <div>
-            <span style={{ color: '#4af626' }}>{terminalStyle.prompt}</span>{' '}
-            <span>{visibleText}</span>
+            <span style={{ color: '#4ade80' }}>{terminalStyle.prompt}</span>{' '}
+            <span style={{ color: '#d1fae5' }}>{visibleText}</span>
             {(!isTypingComplete || showCursor) && (
               <span style={{ 
                 display: 'inline-block', 
                 width: `${terminalStyle.fontSize * 0.6}px`, 
                 height: `${terminalStyle.fontSize}px`, 
-                backgroundColor: terminalStyle.textColor,
+                backgroundColor: '#60a5fa',
                 verticalAlign: 'middle',
                 marginLeft: '2px',
                 opacity: showCursor ? 1 : 0
