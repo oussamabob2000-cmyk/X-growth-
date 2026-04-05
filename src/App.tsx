@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Player } from '@remotion/player';
 import { VideoComposition, Scene } from './components/VideoComposition';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Loader2, Video, Settings, Download, Sparkles, Play, CheckCircle2 } from 'lucide-react';
+import { Loader2, Video, Settings, Download, Sparkles, Play, CheckCircle2, X } from 'lucide-react';
 import { cn } from './lib/utils';
 import * as Mp4Muxer from 'mp4-muxer';
 
@@ -41,6 +41,12 @@ export default function App() {
   const [exportProgress, setExportProgress] = useState(0);
   const playerRef = useRef<any>(null);
 
+  // AI Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openrouter'>('gemini');
+  const [openRouterApiKey, setOpenRouterApiKey] = useState('');
+  const [openRouterModel, setOpenRouterModel] = useState('anthropic/claude-3-haiku');
+
   const fps = 30;
   const totalFrames = durationSeconds * fps;
 
@@ -50,35 +56,67 @@ export default function App() {
     setScenes([]);
 
     try {
-      const ai = getAI();
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `I have written the following text:
-        "${prompt}"
-        
-        I want to turn this EXACT text into a video. Do NOT rewrite my text, do NOT add new information, and do NOT generate a random script. 
-        Split my exact text into a sequence of scenes. 
-        The total video duration is ${durationSeconds} seconds (${totalFrames} frames at ${fps} fps).
-        Provide the text to display for each scene (using my exact words), the duration in frames for each scene (the sum of all durations MUST equal exactly ${totalFrames}), a background color (hex code), and a text color (hex code) that contrasts well with the background.`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
+      const promptText = `I have written the following text:\n"${prompt}"\n\nI want to turn this EXACT text into a video. Do NOT rewrite my text, do NOT add new information, and do NOT generate a random script.\nSplit my exact text into a sequence of scenes.\nThe total video duration is ${durationSeconds} seconds (${totalFrames} frames at ${fps} fps).\nProvide the text to display for each scene (using my exact words), the duration in frames for each scene (the sum of all durations MUST equal exactly ${totalFrames}), a background color (hex code), and a text color (hex code) that contrasts well with the background.\n\nIMPORTANT: Return ONLY valid JSON. The JSON must be an object with a "scenes" array. Each object in the array must have: "text" (string), "durationInFrames" (number), "backgroundColor" (string hex), "textColor" (string hex).`;
+
+      let generatedText = '';
+
+      if (aiProvider === 'gemini') {
+        const ai = getAI();
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: promptText,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
               type: Type.OBJECT,
               properties: {
-                text: { type: Type.STRING, description: 'The text to display on screen' },
-                durationInFrames: { type: Type.INTEGER, description: 'Duration of this scene in frames' },
-                backgroundColor: { type: Type.STRING, description: 'Hex color code for background' },
-                textColor: { type: Type.STRING, description: 'Hex color code for text' },
+                scenes: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      text: { type: Type.STRING },
+                      durationInFrames: { type: Type.INTEGER },
+                      backgroundColor: { type: Type.STRING },
+                      textColor: { type: Type.STRING },
+                    },
+                    required: ['text', 'durationInFrames', 'backgroundColor', 'textColor'],
+                  }
+                }
               },
-              required: ['text', 'durationInFrames', 'backgroundColor', 'textColor'],
+              required: ['scenes']
             },
           },
-        },
-      });
+        });
+        generatedText = response.text || '{"scenes":[]}';
+      } else {
+        if (!openRouterApiKey) throw new Error("OpenRouter API Key is missing. Please add it in Settings.");
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openRouterApiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': window.location.href,
+            'X-Title': 'Remotion AI Studio'
+          },
+          body: JSON.stringify({
+            model: openRouterModel,
+            messages: [{ role: 'user', content: promptText }],
+            response_format: { type: 'json_object' }
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error?.message || 'OpenRouter API error');
+        }
+        const data = await res.json();
+        generatedText = data.choices[0].message.content;
+      }
 
-      const generatedScenes: Scene[] = JSON.parse(response.text || '[]');
+      // Clean up markdown if present
+      generatedText = generatedText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(generatedText);
+      const generatedScenes: Scene[] = parsed.scenes || parsed || [];
       
       // Normalize durations to ensure they match totalFrames exactly
       let currentTotal = generatedScenes.reduce((acc, scene) => acc + scene.durationInFrames, 0);
@@ -263,12 +301,21 @@ export default function App() {
         
         {/* Left Column: Controls */}
         <div className="lg:col-span-5 space-y-8">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3 mb-2">
-              <Video className="w-8 h-8 text-indigo-500" />
-              Remotion AI Studio
-            </h1>
-            <p className="text-neutral-400">Generate dynamic videos from text using Gemini 3 Flash.</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3 mb-2">
+                <Video className="w-8 h-8 text-indigo-500" />
+                Remotion AI Studio
+              </h1>
+              <p className="text-neutral-400">Generate dynamic videos from text using AI.</p>
+            </div>
+            <button 
+              onClick={() => setShowSettings(true)} 
+              className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white"
+              title="AI Settings"
+            >
+              <Settings className="w-6 h-6" />
+            </button>
           </div>
 
           <div className="space-y-6 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
@@ -478,6 +525,75 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Settings className="w-5 h-5" />
+                AI Provider Settings
+              </h2>
+              <button onClick={() => setShowSettings(false)} className="text-neutral-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-2">AI Provider</label>
+                <div className="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
+                  <button
+                    onClick={() => setAiProvider('gemini')}
+                    className={cn("flex-1 py-2 text-sm font-medium rounded-md transition-all", aiProvider === 'gemini' ? "bg-neutral-800 text-white" : "text-neutral-400")}
+                  >
+                    Google Gemini
+                  </button>
+                  <button
+                    onClick={() => setAiProvider('openrouter')}
+                    className={cn("flex-1 py-2 text-sm font-medium rounded-md transition-all", aiProvider === 'openrouter' ? "bg-neutral-800 text-white" : "text-neutral-400")}
+                  >
+                    OpenRouter
+                  </button>
+                </div>
+              </div>
+
+              {aiProvider === 'openrouter' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-400 mb-2">OpenRouter API Key</label>
+                    <input
+                      type="password"
+                      value={openRouterApiKey}
+                      onChange={(e) => setOpenRouterApiKey(e.target.value)}
+                      placeholder="sk-or-v1-..."
+                      className="w-full py-2 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-400 mb-2">Model</label>
+                    <input
+                      type="text"
+                      value={openRouterModel}
+                      onChange={(e) => setOpenRouterModel(e.target.value)}
+                      placeholder="e.g., anthropic/claude-3-haiku"
+                      className="w-full py-2 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <p className="text-xs text-neutral-500 mt-2">
+                      Popular: anthropic/claude-3-haiku, google/gemini-2.5-flash, meta-llama/llama-3-8b-instruct
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex justify-end">
+              <button onClick={() => setShowSettings(false)} className="py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
