@@ -15,6 +15,14 @@ export type TerminalStyle = {
   lineHeight: number;
   backgroundColor: string;
   textColor: string;
+  creatorName: string;
+  creatorHandle: string;
+  shellName: string;
+  creatorLogo: string | null;
+  showCreatorLogo: boolean;
+  showCreatorName: boolean;
+  showHandle: boolean;
+  platformName: string;
 };
 
 export type Scene = {
@@ -34,12 +42,18 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, term
   const { fps } = useVideoConfig();
 
   // Calculate total text and visible characters
-  const fullText = scenes.map(s => s.text).join(' ');
+  const rawText = scenes.map(s => s.text).join(' ');
+  // Format text to add newlines after sentences for better terminal wrapping
+  const fullText = rawText.replace(/([.!?])\s+(?=[A-Z])/g, '$1\n');
+  
   const charsToShow = Math.floor(frame * terminalStyle.typingSpeed);
   const visibleText = fullText.substring(0, charsToShow);
   
   const isTypingComplete = charsToShow >= fullText.length;
   const showCursor = terminalStyle.cursorBlink ? (Math.floor(frame / 15) % 2 === 0) : true;
+
+  // Auto-generate title if shellName is provided and title is default-like
+  const displayTitle = terminalStyle.title || `${terminalStyle.creatorName.toLowerCase()} — ${terminalStyle.shellName} — 80x24`;
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }}>
@@ -84,7 +98,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, term
               fontWeight: 500,
               pointerEvents: 'none'
             }}>
-              {terminalStyle.title}
+              {displayTitle}
             </div>
           </div>
         )}
@@ -122,6 +136,35 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ scenes, term
           </div>
         </div>
       </div>
+
+      {/* Creator Identity Overlay */}
+      {(terminalStyle.showCreatorName || terminalStyle.showHandle || terminalStyle.showCreatorLogo) && (
+        <div style={{
+          position: 'absolute',
+          bottom: '40px',
+          left: '40px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+          color: 'white',
+          textShadow: '0 2px 10px rgba(0,0,0,0.5)'
+        }}>
+          {terminalStyle.showCreatorLogo && terminalStyle.creatorLogo && (
+            <img src={terminalStyle.creatorLogo} alt="Logo" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,255,255,0.2)' }} />
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+            {terminalStyle.showCreatorName && (
+              <span style={{ fontSize: '24px', fontWeight: 'bold' }}>{terminalStyle.creatorName}</span>
+            )}
+            {terminalStyle.showHandle && (
+              <span style={{ fontSize: '18px', opacity: 0.8 }}>
+                {terminalStyle.creatorHandle} {terminalStyle.platformName ? `• ${terminalStyle.platformName}` : ''}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </AbsoluteFill>
   );
 };

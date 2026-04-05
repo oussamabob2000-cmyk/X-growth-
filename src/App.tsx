@@ -25,6 +25,7 @@ const ASPECT_RATIOS = {
   '9:16': { width: 1080, height: 1920 },
   '1:1': { width: 1080, height: 1080 },
   '4:5': { width: 1080, height: 1350 },
+  '16:4': { width: 1920, height: 480 },
 };
 
 type AspectRatioKey = keyof typeof ASPECT_RATIOS;
@@ -62,7 +63,17 @@ export default function App() {
     lineHeight: 1.5,
     backgroundColor: '#1e1e1e',
     textColor: '#f0f0f0',
+    creatorName: 'Creator',
+    creatorHandle: '@creator',
+    shellName: 'zsh',
+    creatorLogo: null,
+    showCreatorLogo: true,
+    showCreatorName: true,
+    showHandle: true,
+    platformName: 'YouTube',
   });
+
+  const [settingsTab, setSettingsTab] = useState<'ai' | 'terminal' | 'identity'>('ai');
 
   const fps = 30;
   const totalFrames = durationSeconds * fps;
@@ -210,7 +221,9 @@ export default function App() {
         ctx.font = `${terminalStyle.fontSize}px monospace`;
         const lineHeight = terminalStyle.fontSize * terminalStyle.lineHeight;
         
-        const fullText = scenes.map(s => s.text).join(' ');
+        const rawText = scenes.map(s => s.text).join(' ');
+        const fullText = rawText.replace(/([.!?])\s+(?=[A-Z])/g, '$1\n');
+        
         const charsToShow = Math.floor(f * terminalStyle.typingSpeed);
         const visibleText = fullText.substring(0, charsToShow);
         const promptText = terminalStyle.prompt + ' ';
@@ -224,19 +237,23 @@ export default function App() {
         }
         
         const combinedText = promptText + visibleText;
-        const textWords = combinedText.split(' ');
-        let currentLine = '';
-        for (let i = 0; i < textWords.length; i++) {
-           const testLine = currentLine + textWords[i] + ' ';
-           const metrics = ctx.measureText(testLine);
-           if (metrics.width > maxWidth && i > 0) {
-               lines.push(currentLine);
-               currentLine = textWords[i] + ' ';
-           } else {
-               currentLine = testLine;
-           }
+        const paragraphs = combinedText.split('\n');
+        
+        for (let p = 0; p < paragraphs.length; p++) {
+            const textWords = paragraphs[p].split(' ');
+            let currentLine = '';
+            for (let i = 0; i < textWords.length; i++) {
+               const testLine = currentLine + textWords[i] + ' ';
+               const metrics = ctx.measureText(testLine);
+               if (metrics.width > maxWidth && currentLine !== '') {
+                   lines.push(currentLine);
+                   currentLine = textWords[i] + ' ';
+               } else {
+                   currentLine = testLine;
+               }
+            }
+            lines.push(currentLine);
         }
-        lines.push(currentLine);
 
         const contentHeight = lines.length * lineHeight;
         const topBarHeight = terminalStyle.showTopBar ? 40 : 0;
@@ -304,7 +321,8 @@ export default function App() {
             ctx.font = '500 16px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(terminalStyle.title, startX + termWidth / 2, startY + topBarHeight / 2);
+            const displayTitle = terminalStyle.title || `${terminalStyle.creatorName.toLowerCase()} — ${terminalStyle.shellName} — 80x24`;
+            ctx.fillText(displayTitle, startX + termWidth / 2, startY + topBarHeight / 2);
         }
 
         // Draw Content
@@ -351,6 +369,44 @@ export default function App() {
             }
             
             textY += lineHeight;
+        }
+
+        // Draw Creator Overlay
+        if (terminalStyle.showCreatorName || terminalStyle.showHandle || terminalStyle.showCreatorLogo) {
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            
+            let overlayX = 40;
+            const overlayY = height - 40;
+            
+            if (terminalStyle.showCreatorLogo && terminalStyle.creatorLogo) {
+                // In a real implementation, we'd need to load the image first.
+                // For canvas export, drawing images requires pre-loading.
+                // We'll skip drawing the image in canvas export for simplicity unless preloaded.
+                // Just reserve space.
+                overlayX += 76; // 60px image + 16px gap
+            }
+            
+            if (terminalStyle.showCreatorName) {
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 24px sans-serif';
+                ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetY = 2;
+                ctx.fillText(terminalStyle.creatorName, overlayX, overlayY - 12);
+            }
+            
+            if (terminalStyle.showHandle) {
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.font = '18px sans-serif';
+                ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetY = 2;
+                const handleText = `${terminalStyle.creatorHandle} ${terminalStyle.platformName ? `• ${terminalStyle.platformName}` : ''}`;
+                ctx.fillText(handleText, overlayX, overlayY + 12);
+            }
+            
+            ctx.shadowColor = 'transparent';
         }
 
         // Encode frame
@@ -426,7 +482,7 @@ export default function App() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-2">Video Format (Canvas Setup)</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {(Object.keys(ASPECT_RATIOS) as AspectRatioKey[]).map((ratio) => (
                     <button
                       key={ratio}
@@ -438,7 +494,7 @@ export default function App() {
                           : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
                       )}
                     >
-                      {ratio === '9:16' ? 'Vertical Shorts' : ratio === '1:1' ? 'Square' : ratio === '16:9' ? 'Landscape' : 'Portrait'} ({ratio})
+                      {ratio === '9:16' ? 'Vertical Shorts' : ratio === '1:1' ? 'Square' : ratio === '16:9' ? 'Landscape' : ratio === '4:5' ? 'Portrait' : 'Ultra Wide'} ({ratio})
                     </button>
                   ))}
                 </div>
@@ -542,92 +598,6 @@ export default function App() {
             {scenes.length > 0 && (
               <div className="p-6 border-t border-neutral-800 bg-neutral-900 space-y-6">
                 
-                {/* Terminal Style Controls */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-neutral-300 uppercase tracking-wider mb-4">Terminal Style Controls</h3>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Terminal Title</label>
-                      <input 
-                        type="text" 
-                        value={terminalStyle.title} 
-                        onChange={e => setTerminalStyle(s => ({...s, title: e.target.value}))}
-                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Prompt Style</label>
-                      <input 
-                        type="text" 
-                        value={terminalStyle.prompt} 
-                        onChange={e => setTerminalStyle(s => ({...s, prompt: e.target.value}))}
-                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Typing Speed ({terminalStyle.typingSpeed})</label>
-                      <input type="range" min="0.1" max="5" step="0.1" value={terminalStyle.typingSpeed} onChange={e => setTerminalStyle(s => ({...s, typingSpeed: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Window Scale ({terminalStyle.scale})</label>
-                      <input type="range" min="0.5" max="1" step="0.05" value={terminalStyle.scale} onChange={e => setTerminalStyle(s => ({...s, scale: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Text Size ({terminalStyle.fontSize}px)</label>
-                      <input type="range" min="12" max="72" step="1" value={terminalStyle.fontSize} onChange={e => setTerminalStyle(s => ({...s, fontSize: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Padding ({terminalStyle.padding}px)</label>
-                      <input type="range" min="10" max="100" step="5" value={terminalStyle.padding} onChange={e => setTerminalStyle(s => ({...s, padding: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Background Color</label>
-                      <div className="flex items-center gap-2">
-                        <input type="color" value={terminalStyle.backgroundColor} onChange={e => setTerminalStyle(s => ({...s, backgroundColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
-                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.backgroundColor}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-500 mb-1">Text Color</label>
-                      <div className="flex items-center gap-2">
-                        <input type="color" value={terminalStyle.textColor} onChange={e => setTerminalStyle(s => ({...s, textColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
-                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.textColor}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-4 pt-2">
-                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
-                      <input type="checkbox" checked={terminalStyle.cursorBlink} onChange={e => setTerminalStyle(s => ({...s, cursorBlink: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
-                      Cursor Blink
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
-                      <input type="checkbox" checked={terminalStyle.showTopBar} onChange={e => setTerminalStyle(s => ({...s, showTopBar: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
-                      Top Bar
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
-                      <input type="checkbox" checked={terminalStyle.showTrafficLights} onChange={e => setTerminalStyle(s => ({...s, showTrafficLights: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
-                      Traffic Lights
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
-                      <input type="checkbox" checked={terminalStyle.showLastLogin} onChange={e => setTerminalStyle(s => ({...s, showLastLogin: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
-                      Last Login Text
-                    </label>
-                  </div>
-                </div>
-
-                <hr className="border-neutral-800" />
-
                 {/* Export Controls */}
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -721,64 +691,235 @@ export default function App() {
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-neutral-800 flex items-center justify-between shrink-0">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Settings className="w-5 h-5" />
-                AI Provider Settings
+                Settings
               </h2>
               <button onClick={() => setShowSettings(false)} className="text-neutral-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-neutral-400 mb-2">AI Provider</label>
-                <div className="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
-                  <button
-                    onClick={() => setAiProvider('gemini')}
-                    className={cn("flex-1 py-2 text-sm font-medium rounded-md transition-all", aiProvider === 'gemini' ? "bg-neutral-800 text-white" : "text-neutral-400")}
-                  >
-                    Google Gemini
-                  </button>
-                  <button
-                    onClick={() => setAiProvider('openrouter')}
-                    className={cn("flex-1 py-2 text-sm font-medium rounded-md transition-all", aiProvider === 'openrouter' ? "bg-neutral-800 text-white" : "text-neutral-400")}
-                  >
-                    OpenRouter
-                  </button>
-                </div>
-              </div>
+            
+            <div className="flex border-b border-neutral-800 shrink-0">
+              <button onClick={() => setSettingsTab('ai')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'ai' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>AI Provider</button>
+              <button onClick={() => setSettingsTab('terminal')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'terminal' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>Terminal Style</button>
+              <button onClick={() => setSettingsTab('identity')} className={cn("flex-1 py-3 text-sm font-medium transition-colors", settingsTab === 'identity' ? "text-indigo-400 border-b-2 border-indigo-500" : "text-neutral-400 hover:text-neutral-200")}>Creator Identity</button>
+            </div>
 
-              {aiProvider === 'openrouter' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+            <div className="p-6 overflow-y-auto">
+              {settingsTab === 'ai' && (
+                <div className="space-y-6 animate-in fade-in">
                   <div>
-                    <label className="block text-sm font-medium text-neutral-400 mb-2">OpenRouter API Key</label>
-                    <input
-                      type="password"
-                      value={openRouterApiKey}
-                      onChange={(e) => setOpenRouterApiKey(e.target.value)}
-                      placeholder="sk-or-v1-..."
-                      className="w-full py-2 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    <label className="block text-sm font-medium text-neutral-400 mb-2">AI Provider</label>
+                    <div className="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
+                      <button
+                        onClick={() => setAiProvider('gemini')}
+                        className={cn("flex-1 py-2 text-sm font-medium rounded-md transition-all", aiProvider === 'gemini' ? "bg-neutral-800 text-white" : "text-neutral-400")}
+                      >
+                        Google Gemini
+                      </button>
+                      <button
+                        onClick={() => setAiProvider('openrouter')}
+                        className={cn("flex-1 py-2 text-sm font-medium rounded-md transition-all", aiProvider === 'openrouter' ? "bg-neutral-800 text-white" : "text-neutral-400")}
+                      >
+                        OpenRouter
+                      </button>
+                    </div>
+                  </div>
+
+                  {aiProvider === 'openrouter' && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-400 mb-2">OpenRouter API Key</label>
+                        <input
+                          type="password"
+                          value={openRouterApiKey}
+                          onChange={(e) => setOpenRouterApiKey(e.target.value)}
+                          placeholder="sk-or-v1-..."
+                          className="w-full py-2 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-400 mb-2">Model</label>
+                        <input
+                          type="text"
+                          value={openRouterModel}
+                          onChange={(e) => setOpenRouterModel(e.target.value)}
+                          placeholder="e.g., anthropic/claude-3-haiku"
+                          className="w-full py-2 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <p className="text-xs text-neutral-500 mt-2">
+                          Popular: anthropic/claude-3-haiku, google/gemini-2.5-flash, meta-llama/llama-3-8b-instruct
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {settingsTab === 'terminal' && (
+                <div className="space-y-6 animate-in fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Terminal Title</label>
+                      <input 
+                        type="text" 
+                        value={terminalStyle.title} 
+                        onChange={e => setTerminalStyle(s => ({...s, title: e.target.value}))}
+                        placeholder="Leave empty to auto-generate"
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Prompt Style</label>
+                      <input 
+                        type="text" 
+                        value={terminalStyle.prompt} 
+                        onChange={e => setTerminalStyle(s => ({...s, prompt: e.target.value}))}
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Typing Speed ({terminalStyle.typingSpeed})</label>
+                      <input type="range" min="0.1" max="5" step="0.1" value={terminalStyle.typingSpeed} onChange={e => setTerminalStyle(s => ({...s, typingSpeed: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Window Scale ({terminalStyle.scale})</label>
+                      <input type="range" min="0.5" max="1" step="0.05" value={terminalStyle.scale} onChange={e => setTerminalStyle(s => ({...s, scale: parseFloat(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Text Size ({terminalStyle.fontSize}px)</label>
+                      <input type="range" min="12" max="72" step="1" value={terminalStyle.fontSize} onChange={e => setTerminalStyle(s => ({...s, fontSize: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Padding ({terminalStyle.padding}px)</label>
+                      <input type="range" min="10" max="100" step="5" value={terminalStyle.padding} onChange={e => setTerminalStyle(s => ({...s, padding: parseInt(e.target.value)}))} className="w-full accent-indigo-500" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Background Color</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={terminalStyle.backgroundColor} onChange={e => setTerminalStyle(s => ({...s, backgroundColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
+                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.backgroundColor}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Text Color</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={terminalStyle.textColor} onChange={e => setTerminalStyle(s => ({...s, textColor: e.target.value}))} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0" />
+                        <span className="text-sm text-neutral-300 font-mono">{terminalStyle.textColor}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4 pt-2">
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.cursorBlink} onChange={e => setTerminalStyle(s => ({...s, cursorBlink: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Cursor Blink
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showTopBar} onChange={e => setTerminalStyle(s => ({...s, showTopBar: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Top Bar
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showTrafficLights} onChange={e => setTerminalStyle(s => ({...s, showTrafficLights: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Traffic Lights
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showLastLogin} onChange={e => setTerminalStyle(s => ({...s, showLastLogin: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Last Login Text
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === 'identity' && (
+                <div className="space-y-6 animate-in fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Creator Name</label>
+                      <input 
+                        type="text" 
+                        value={terminalStyle.creatorName} 
+                        onChange={e => setTerminalStyle(s => ({...s, creatorName: e.target.value}))}
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Creator Handle</label>
+                      <input 
+                        type="text" 
+                        value={terminalStyle.creatorHandle} 
+                        onChange={e => setTerminalStyle(s => ({...s, creatorHandle: e.target.value}))}
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Platform Name</label>
+                      <input 
+                        type="text" 
+                        value={terminalStyle.platformName} 
+                        onChange={e => setTerminalStyle(s => ({...s, platformName: e.target.value}))}
+                        placeholder="e.g., YouTube, TikTok"
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-500 mb-1">Shell Name</label>
+                      <select 
+                        value={terminalStyle.shellName} 
+                        onChange={e => setTerminalStyle(s => ({...s, shellName: e.target.value}))}
+                        className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="zsh">zsh</option>
+                        <option value="bash">bash</option>
+                        <option value="fish">fish</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-500 mb-1">Creator Logo (URL or Data URI)</label>
+                    <input 
+                      type="text" 
+                      value={terminalStyle.creatorLogo || ''} 
+                      onChange={e => setTerminalStyle(s => ({...s, creatorLogo: e.target.value || null}))}
+                      placeholder="https://example.com/logo.png"
+                      className="w-full py-1.5 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-400 mb-2">Model</label>
-                    <input
-                      type="text"
-                      value={openRouterModel}
-                      onChange={(e) => setOpenRouterModel(e.target.value)}
-                      placeholder="e.g., anthropic/claude-3-haiku"
-                      className="w-full py-2 px-3 bg-neutral-950 border border-neutral-800 rounded-lg text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                    <p className="text-xs text-neutral-500 mt-2">
-                      Popular: anthropic/claude-3-haiku, google/gemini-2.5-flash, meta-llama/llama-3-8b-instruct
-                    </p>
+
+                  <div className="flex flex-wrap gap-4 pt-2">
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showCreatorName} onChange={e => setTerminalStyle(s => ({...s, showCreatorName: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Show Name
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showHandle} onChange={e => setTerminalStyle(s => ({...s, showHandle: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Show Handle
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                      <input type="checkbox" checked={terminalStyle.showCreatorLogo} onChange={e => setTerminalStyle(s => ({...s, showCreatorLogo: e.target.checked}))} className="rounded border-neutral-700 bg-neutral-900 text-indigo-500 focus:ring-indigo-500" />
+                      Show Logo
+                    </label>
                   </div>
                 </div>
               )}
             </div>
-            <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex justify-end">
+            <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex justify-end shrink-0">
               <button onClick={() => setShowSettings(false)} className="py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
                 Done
               </button>
